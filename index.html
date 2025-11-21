@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+  <meta charset="utf-8">
+  <title>AR Compass Directions</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    body { margin: 0; overflow: hidden; font-family: sans-serif; }
+    #message {
+      position: fixed;
+      bottom: 15px;
+      left: 0; right: 0;
+      text-align: center;
+      color: white;
+      background: rgba(0,0,0,0.5);
+      padding: 10px;
+      font-size: 18px;
+      border-radius: 8px;
+      max-width: 300px;
+      margin: 0 auto;
+    }
+  </style>
+</head>
+<body>
+
+<div id="message"></div>
+
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.152.2/build/three.module.js';
+import { ARButton } from 'https://unpkg.com/three@0.152.2/examples/jsm/webxr/ARButton.js';
+
+let camera, scene, renderer;
+let northMarker, southMarker, eastMarker, westMarker;
+const clock = new THREE.Clock();
+
+const messageEl = document.getElementById('message');
+
+function showMsg(t, ms = 2500){
+  messageEl.textContent = t;
+  clearTimeout(messageEl._t);
+  messageEl._t = setTimeout(()=>messageEl.textContent="", ms);
+}
+
+// create label marker
+function createMarker(labelText){
+  const group = new THREE.Group();
+
+  // sphere wireframe
+  const sphereGeo = new THREE.SphereGeometry(0.07, 20, 16);
+  const sphereMat = new THREE.MeshBasicMaterial({
+    color: 0x4dd0e1,
+    wireframe: true
+  });
+  const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+  group.add(sphere);
+
+  // label texture
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0,0,256,64);
+  ctx.font = 'bold 32px sans-serif';
+  ctx.fillStyle = 'white';
+  ctx.textAlign = 'center';
+  ctx.fillText(labelText, 128, 44);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.MeshBasicMaterial({map: tex, transparent: true});
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 0.07), mat);
+  plane.position.set(0,0.15,0);
+
+  group.add(plane);
+  return group;
+}
+
+// initialize scene and renderer
+function initThree(){
+  renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  document.body.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+}
+
+// update compass markers
+function updateCompassMarkers(){
+  if(!northMarker) return;
+
+  const userPos = camera.position.clone();
+
+  // get forward direction from camera quaternion
+  const forward = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+  forward.y = 0;
+  forward.normalize();
+
+  const north = forward.clone();
+  const south = forward.clone().multiplyScalar(-1);
+  const east  = forward.clone().applyAxisAngle(new THREE.Vector3(0,1,0), -Math.PI/2);
+  const west  = forward.clone().applyAxisAngle(new THREE.Vector3(0,1,0),  Math.PI/2);
+
+  const d = 1.0;
+
+  northMarker.position.copy(userPos).add(north.multiplyScalar(d));
+  southMarker.position.copy(userPos).add(south.multiplyScalar(d));
+  eastMarker.position.copy(userPos).add(east.multiplyScalar(d));
+  westMarker.position.copy(userPos).add(west.multiplyScalar(d));
+
+  northMarker.lookAt(userPos);
+  southMarker.lookAt(userPos);
+  eastMarker.lookAt(userPos);
+  westMarker.lookAt(userPos);
+}
+
+// render loop
+function render(){
+  renderer.render(scene, camera);
+  updateCompassMarkers();
+}
+
+// start xr
+async function startAR(){
+  const btn = ARButton.createButton(renderer, { requiredFeatures: [] });
+  document.body.appendChild(btn);
+
+  renderer.setAnimationLoop(render);
+
+  renderer.xr.addEventListener('sessionstart', () => {
+    showMsg("AR session started");
+
+    // create compass markers
+    northMarker = createMarker("N");
+    southMarker = createMarker("S");
+    eastMarker  = createMarker("E");
+    westMarker  = createMarker("W");
+
+    scene.add(northMarker, southMarker, eastMarker, westMarker);
+  });
+}
+
+initThree();
+startAR();
+
+</script>
+</body>
+</html>
